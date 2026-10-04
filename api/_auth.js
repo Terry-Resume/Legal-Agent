@@ -36,17 +36,26 @@ async function verifySessionToken(token) {
   return claims
 }
 
+// Role lookups are cached briefly; tools that poll (EA syncs every 15s) would
+// otherwise call the Clerk API on every request.
+const roleCache = new Map()
 async function getRole(userId) {
+  const hit = roleCache.get(userId)
+  if (hit && hit.at > Date.now() - 60_000) return hit.role
   const res = await fetch(`https://api.clerk.com/v1/users/${encodeURIComponent(userId)}`, {
     headers: { Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}` },
   })
   if (!res.ok) throw new Error('Could not load user')
   const user = await res.json()
-  return user.public_metadata?.role ?? null
+  const role = user.public_metadata?.role ?? null
+  roleCache.set(userId, { role, at: Date.now() })
+  return role
 }
 
-// Returns the user id, or sends a 401/403 and returns null.
-export async function requireUser(req, res, { role } = {}) {
+// Returns the user id, or sends a 401/403 and returns null. `role` (one) or
+// `roles` (any of) restrict access when CLERK_SECRET_KEY is set.
+export async function requireUser(req, res, { role, roles } = {}) {
+  const allowed = roles || (role ? [role] : null)
   const auth = req.headers.authorization || ''
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : ''
   if (!token || !FRONTEND_API) {
@@ -60,9 +69,9 @@ export async function requireUser(req, res, { role } = {}) {
     res.status(401).json({ error: 'Sign in required' })
     return null
   }
-  if (role && process.env.CLERK_SECRET_KEY) {
+  if (allowed && process.env.CLERK_SECRET_KEY) {
     try {
-      if ((await getRole(claims.sub)) !== role) {
+      if (!allowed.includes(await getRole(claims.sub))) {
         res.status(403).json({ error: 'Forbidden' })
         return null
       }
