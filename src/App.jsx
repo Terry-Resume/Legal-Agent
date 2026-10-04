@@ -1,6 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 
 const PROXY_URL = '/api/legal-review'
+
+// Sends the Clerk session token so the API can verify who is calling.
+async function postReview(body) {
+  const token = await window.Clerk?.session?.getToken()
+  return fetch(PROXY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body,
+  })
+}
 const HISTORY_KEY = 'k8-legal-history'
 
 const SYSTEM_PROMPT = `You are a legal review AI assistant for Kato.8 Studios, an indie game studio based in Mission Hills, CA.
@@ -133,11 +143,7 @@ ${document}
 ---`
 
     try {
-      const res = await fetch(PROXY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, type: 'document_review', document }),
-      })
+      const res = await postReview(JSON.stringify({ prompt, type: 'document_review', document }))
       if (!res.ok) throw new Error(`Server error: ${res.status}`)
       const data = await res.json()
       const text = data.result || data.content || data.text || JSON.stringify(data)
@@ -238,11 +244,7 @@ Please check this situation against relevant California law and Kato.8 Studios' 
 4. What the studio should do to ensure or maintain compliance`
 
     try {
-      const res = await fetch(PROXY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, type: 'compliance_check', document: situation }),
-      })
+      const res = await postReview(JSON.stringify({ prompt, type: 'compliance_check', document: situation }))
       if (!res.ok) throw new Error(`Server error: ${res.status}`)
       const data = await res.json()
       const text = data.result || data.content || data.text || JSON.stringify(data)
@@ -337,11 +339,7 @@ Please review the legal implications of this operation for Kato.8 Studios. Consi
 5. Recommended protective measures`
 
     try {
-      const res = await fetch(PROXY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, type: 'operations_review', document: description }),
-      })
+      const res = await postReview(JSON.stringify({ prompt, type: 'operations_review', document: description }))
       if (!res.ok) throw new Error(`Server error: ${res.status}`)
       const data = await res.json()
       const text = data.result || data.content || data.text || JSON.stringify(data)
