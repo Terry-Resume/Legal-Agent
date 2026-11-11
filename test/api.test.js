@@ -19,7 +19,7 @@ const deny = async (_req, res) => { res.status(403).json({ error: 'Forbidden' })
 const calls = []
 const ai = (status = 200, text = '**Risk** HIGH') => async (body, opts) => { calls.push({ body, opts }); return { status, data: status === 200 ? { content: [{ type: 'text', text }] } : { error: { message: 'sk-ant-leak org_123' } } } }
 
-beforeEach(() => { calls.length = 0; delete process.env.KATO8_DEMO; delete process.env.CLERK_SECRET_KEY })
+beforeEach(() => { calls.length = 0; delete process.env.KATO8_DEMO; delete process.env.VITE_KATO8_DEMO; delete process.env.CLERK_SECRET_KEY })
 
 test('only super_admin (per the suite registry) may use the Legal Agent', () => {
   assert.deepEqual([...LEGAL_ROLES], ['super_admin'])
