@@ -1,36 +1,19 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
+import { apiFetch } from '@kato8/core/react'
+import { STUDIO } from '@kato8/core'
 
 const PROXY_URL = '/api/legal-review'
 
-// Sends the Clerk session token so the API can verify who is calling.
-async function postReview(body) {
-  const token = await window.Clerk?.session?.getToken()
-  return fetch(PROXY_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body,
-  })
+// apiFetch attaches the Clerk session token (or the demo role); the server verifies it and picks the model.
+const postReview = body => apiFetch(PROXY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+
+// Turns a failed response into a readable message from the server's own error text.
+async function failure(res) {
+  let detail = ''
+  try { detail = (await res.json()).error || '' } catch { /* not JSON */ }
+  return new Error(detail || `Request failed (${res.status})`)
 }
 const HISTORY_KEY = 'k8-legal-history'
-
-const SYSTEM_PROMPT = `You are a legal review AI assistant for Kato.8 Studios, an indie game studio based in Mission Hills, CA.
-
-Studio context:
-- 39 team members operating under revenue-share agreements (contractor structure, not employees)
-- Contractor classification is governed by California AB 5 (ABC test) — compliance is a top concern
-- Active game projects: Last Light, Corebound, Big Boss Cleanup
-- Primary legal concerns: IP assignment, revenue share agreements, CA AB 5 compliance, NDA enforcement, copyright ownership of creative work
-- Founder: Terry Teng (terryt@kato8studios.com)
-
-Your role:
-- Provide structured, actionable legal analysis for internal review
-- Flag risks clearly with severity levels (HIGH / MEDIUM / LOW)
-- Reference specific California statutes, case law, or regulations where relevant
-- Always be direct and specific — avoid vague disclaimers in the body of your analysis
-- Structure responses with clear sections using markdown: **Section Title**, bullet points, numbered lists
-- At the end of every response, include a brief "Recommended Next Steps" section
-
-You do NOT provide binding legal advice. Your analysis is for internal review to help the team identify issues before consulting outside counsel.`
 
 const COMPLIANCE_AREAS = [
   'CA Employment Law / AB 5',
@@ -66,14 +49,12 @@ function renderMarkdown(text) {
   const lines = text.split('\n')
   const elements = []
   let key = 0
-  let inList = false
   let listItems = []
 
   const flushList = () => {
     if (listItems.length > 0) {
       elements.push(<ul key={`ul-${key++}`}>{listItems}</ul>)
       listItems = []
-      inList = false
     }
   }
 
@@ -88,7 +69,6 @@ function renderMarkdown(text) {
       flushList()
       elements.push(<h1 key={key++}>{parseBold(line.slice(2))}</h1>)
     } else if (/^[-*] /.test(line)) {
-      inList = true
       listItems.push(<li key={key++}>{parseBold(line.slice(2))}</li>)
     } else if (/^\d+\. /.test(line)) {
       flushList()
@@ -144,7 +124,7 @@ ${document}
 
     try {
       const res = await postReview(JSON.stringify({ prompt, type: 'document_review', document }))
-      if (!res.ok) throw new Error(`Server error: ${res.status}`)
+      if (!res.ok) throw await failure(res)
       const data = await res.json()
       const text = data.result || data.content || data.text || JSON.stringify(data)
       setResult(text)
@@ -245,7 +225,7 @@ Please check this situation against relevant California law and Kato.8 Studios' 
 
     try {
       const res = await postReview(JSON.stringify({ prompt, type: 'compliance_check', document: situation }))
-      if (!res.ok) throw new Error(`Server error: ${res.status}`)
+      if (!res.ok) throw await failure(res)
       const data = await res.json()
       const text = data.result || data.content || data.text || JSON.stringify(data)
       setResult(text)
@@ -340,7 +320,7 @@ Please review the legal implications of this operation for Kato.8 Studios. Consi
 
     try {
       const res = await postReview(JSON.stringify({ prompt, type: 'operations_review', document: description }))
-      if (!res.ok) throw new Error(`Server error: ${res.status}`)
+      if (!res.ok) throw await failure(res)
       const data = await res.json()
       const text = data.result || data.content || data.text || JSON.stringify(data)
       setResult(text)
@@ -491,9 +471,6 @@ function ErrorBlock({ message }) {
   return (
     <div className="error-block">
       <strong>Error:</strong> {message}
-      {message.includes('fetch') || message.includes('network') || message.includes('500') ? (
-        <p>Ensure the HR Tool server is running on port 3001.</p>
-      ) : null}
     </div>
   )
 }
@@ -526,7 +503,7 @@ export default function App() {
   const saveHistory = useCallback((entry) => {
     setHistory(prev => {
       const next = [...prev, { ...entry, timestamp: new Date().toISOString() }]
-      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(next)) } catch {}
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(next)) } catch { /* storage unavailable: history is optional */ }
       return next
     })
   }, [])
@@ -534,7 +511,7 @@ export default function App() {
   const clearHistory = useCallback(() => {
     if (window.confirm('Clear all legal review history? This cannot be undone.')) {
       setHistory([])
-      try { localStorage.removeItem(HISTORY_KEY) } catch {}
+      try { localStorage.removeItem(HISTORY_KEY) } catch { /* storage unavailable: history is optional */ }
     }
   }, [])
 
@@ -582,7 +559,7 @@ export default function App() {
 
       <footer className="app-footer">
         <span>Kato.8 Studios Legal Agent v1.0</span>
-        <span>Mission Hills, CA</span>
+        <span>{STUDIO.location}</span>
         <span>Internal use only — not for distribution</span>
       </footer>
     </div>
